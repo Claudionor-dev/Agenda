@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <title>Agenda Completa</title>
+    <link rel="stylesheet" href="style.css"/>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        .evento {
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .evento-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .evento-actions button {
+            margin-left: 5px;
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        #formEvento {
+            margin-top: 20px;
+            background: #fff;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+
+        #formEvento input,
+        #formEvento textarea,
+        #formEvento button {
+            width: 100%;
+            margin-top: 5px;
+            margin-bottom: 10px;
+            padding: 8px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        #formEvento button {
+            background-color: #007BFF;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #formEvento button:hover {
+            background-color: #0056b3;
+        }
+
+        #cancelarEdicao {
+            background-color: #6c757d;
+        }
+
+        label {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<h1>Agenda</h1>
+
+<label for="data">Escolha a data:</label>
+<input type="date" id="data" />
+
+<h2>Eventos do dia</h2>
+<div id="eventos"></div>
+
+<h2>Adicionar novo evento</h2>
+<form id="formEvento">
+    <input type="hidden" id="eventoId" />
+    <label>Título:</label><br/>
+    <input type="text" id="titulo" required /><br/>
+    <label>Hora:</label><br/>
+    <input type="time" id="hora" /><br/>
+    <label>Local:</label><br/>
+    <input type="text" id="local" /><br/>
+    <label>Descrição:</label><br/>
+    <textarea id="descricao" rows="3"></textarea><br/>
+    <button type="submit">Salvar Evento</button>
+    <button type="button" id="cancelarEdicao" style="display:none;">Cancelar</button>
+</form>
+
+<script>
+    const dataInput = document.getElementById('data');
+    const eventosDiv = document.getElementById('eventos');
+    const form = document.getElementById('formEvento');
+    const cancelarBtn = document.getElementById('cancelarEdicao');
+
+    dataInput.value = new Date().toISOString().substring(0,10);
+
+    async function carregarEventos() {
+        eventosDiv.innerHTML = 'Carregando...';
+        const data = dataInput.value;
+        if (!data) return;
+
+        try {
+            const res = await fetch(`/agenda?data=${data}`);
+            if (!res.ok) throw new Error('Erro ao carregar eventos');
+            const json = await res.json();
+
+            if (json.items.length === 0) {
+                eventosDiv.innerHTML = '<i>Nenhum evento para esta data.</i>';
+                return;
+            }
+
+            eventosDiv.innerHTML = '';
+            json.items.forEach(ev => {
+                const div = document.createElement('div');
+                div.className = 'evento';
+
+                const header = document.createElement('div');
+                header.className = 'evento-header';
+
+                const titulo = document.createElement('strong');
+                titulo.textContent = ev.hora ? `${ev.hora} - ${ev.titulo}` : ev.titulo;
+
+                const actions = document.createElement('div');
+                actions.className = 'evento-actions';
+
+                const btnEditar = document.createElement('button');
+                btnEditar.textContent = 'Editar';
+                btnEditar.onclick = () => editarEvento(ev);
+
+                const btnDeletar = document.createElement('button');
+                btnDeletar.textContent = 'Excluir';
+                btnDeletar.onclick = () => deletarEvento(ev.id);
+
+                actions.appendChild(btnEditar);
+                actions.appendChild(btnDeletar);
+
+                header.appendChild(titulo);
+                header.appendChild(actions);
+
+                const local = document.createElement('div');
+                local.textContent = ev.local ? `Local: ${ev.local}` : '';
+
+                const desc = document.createElement('div');
+                desc.textContent = ev.descricao;
+
+                div.appendChild(header);
+                if(ev.local) div.appendChild(local);
+                if(ev.descricao) div.appendChild(desc);
+
+                eventosDiv.appendChild(div);
+            });
+        } catch (err) {
+            eventosDiv.innerHTML = `<span style="color:red;">Erro: ${err.message}</span>`;
+        }
+    }
+
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+
+        const data = dataInput.value;
+        if (!data) {
+            alert('Selecione uma data.');
+            return;
+        }
+
+        const id = document.getElementById('eventoId').value;
+        const titulo = document.getElementById('titulo').value.trim();
+        const hora = document.getElementById('hora').value;
+        const local = document.getElementById('local').value.trim();
+        const descricao = document.getElementById('descricao').value.trim();
+
+        if (!titulo) {
+            alert('Título é obrigatório.');
+            return;
+        }
+
+        const payload = { titulo, hora, local, descricao };
+
+        try {
+            let url = `/agenda?data=${data}`;
+            let method = 'POST';
+
+            if (id) {
+                payload.id = id;
+                method = 'PUT';
+            }
+
+            const res = await fetch(url, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || 'Erro ao salvar evento');
+            }
+
+            limparFormulario();
+            carregarEventos();
+        } catch (err) {
+            alert('Erro: ' + err.message);
+        }
+    });
+
+    async function deletarEvento(id) {
+        if (!confirm('Deseja realmente excluir este evento?')) return;
+
+        const data = dataInput.value;
+
+        try {
+            const res = await fetch(`/agenda?data=${data}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            if (!res.ok) {
+                const errJson = await res.json();
+                throw new Error(errJson.error || 'Erro ao deletar evento');
+            }
+
+            carregarEventos();
+        } catch (err) {
+            alert('Erro: ' + err.message);
+        }
+    }
+
+    function editarEvento(ev) {
+        document.getElementById('eventoId').value = ev.id;
+        document.getElementById('titulo').value = ev.titulo;
+        document.getElementById('hora').value = ev.hora || '';
+        document.getElementById('local').value = ev.local || '';
+        document.getElementById('descricao').value = ev.descricao || '';
+
+        cancelarBtn.style.display = 'inline';
+    }
+
+    function limparFormulario() {
+        form.reset();
+        document.getElementById('eventoId').value = '';
+        cancelarBtn.style.display = 'none';
+    }
+
+    cancelarBtn.addEventListener('click', () => {
+        limparFormulario();
+    });
+
+    dataInput.addEventListener('change', carregarEventos);
+    carregarEventos();
+</script>
+</body>
+</html>
+
